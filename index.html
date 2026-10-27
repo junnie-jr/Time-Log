@@ -85,6 +85,12 @@ dialog p{margin:0 0 16px;font-family:var(--mono);font-size:12px;color:var(--mute
 .day em{font-style:normal;font-size:9px;line-height:1;color:var(--mute)}
 .day.full em{color:var(--ok)}.day.part em{color:var(--warn)}.day.lv em{color:var(--accent)}
 .legend span+span+span::before{background:var(--accent)}
+
+.tools{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.tools button{padding:12px;border-radius:10px;border:1px solid var(--line);background:none;font-family:var(--mono);font-size:13px;color:var(--fg)}
+.tools button:hover{border-color:var(--mute)}
+.bk{font-family:var(--mono);font-size:11px;color:var(--mute);margin:10px 0 0;text-align:center}
+.bk.old{color:var(--warn)}
 </style>
 </head>
 <body>
@@ -108,6 +114,9 @@ dialog p{margin:0 0 16px;font-family:var(--mono);font-size:12px;color:var(--mute
   <div class="legend"><span>complete</span><span>missing time out</span><span>leave</span></div>
 
   <button class="share" id="share">Share logs</button>
+  <div class="tools"><button id="bkBtn">Backup</button><button id="rsBtn">Restore</button></div>
+  <p class="bk" id="bk"></p>
+  <input type="file" id="rf" accept=".json,application/json" hidden>
 </main>
 
 <!-- time prompt / edit dialog -->
@@ -125,7 +134,11 @@ const $=id=>document.getElementById(id);
 let logs={}, prefs={};
 try{logs=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){logs={}}
 try{prefs=JSON.parse(localStorage.getItem(PREF)||'{}')}catch(e){prefs={}}
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(logs))}catch(e){}};
+/* second copy in IndexedDB, used to self-heal if localStorage is wiped */
+const idb=()=>new Promise((res,rej)=>{const q=indexedDB.open('cti',1);q.onupgradeneeded=()=>q.result.createObjectStore('kv');q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)});
+async function idbSet(k,v){try{const db=await idb();db.transaction('kv','readwrite').objectStore('kv').put(v,k)}catch(e){}}
+async function idbGet(k){try{const db=await idb();return await new Promise(r=>{const q=db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r(undefined)})}catch(e){return undefined}}
+const save=()=>{const j=JSON.stringify(logs);try{localStorage.setItem(KEY,j)}catch(e){}idbSet('logs',j)};
 const savePrefs=()=>{try{localStorage.setItem(PREF,JSON.stringify(prefs))}catch(e){}};
 
 const pad=n=>String(n).padStart(2,'0');
@@ -300,8 +313,68 @@ $('share').onclick=async()=>{
   $('hint').textContent=`${name} downloaded. Attach it to the email.`;
 };
 
-render();
-setTimeout(autoPrompt,350);
+/* backup & restore (local file) */
+const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function updateBk(){
+  const l=prefs.lastBackup, days=l?Math.floor((Date.now()-new Date(l))/864e5):null;
+  $('bk').textContent=l?`Last backup: ${l.slice(0,10)}`:'No backup yet.';
+  $('bk').className='bk'+((!l||days>=7)&&Object.keys(logs).length?' old':'');
+}
+$('bkBtn').onclick=async()=>{
+  const name=`CTI_backup_${todayKey()}.json`;
+  const body=JSON.stringify({app:'CTI-P',version:1,exported:new Date().toISOString(),logs},null,1);
+  const file=new File([body],name,{type:'application/json'});
+  if(isIOS&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],title:name})}catch(e){if(e.name==='AbortError')return}
+  }else{
+    const url=URL.createObjectURL(file),a=document.createElement('a');
+    a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+  }
+  prefs.lastBackup=new Date().toISOString();savePrefs();updateBk();
+  $('hint').textContent=isIOS?'Choose Save to Files to keep the backup.':`${name} saved to your Downloads folder.`;
+};
+$('rsBtn').onclick=()=>$('rf').click();
+$('rf').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  let clean={};
+  try{
+    const src=JSON.parse(await f.text()).logs;
+    for(const k in src){
+      const r=src[k];
+      if(/^\d{4}-\d{2}-\d{2}$/.test(k)&&r&&typeof r==='object'){
+        const t=TYPES[r.type]?r.type:'';
+        clean[k]={type:t,in:/^\d{2}:\d{2}$/.test(r.in)?r.in:'',out:/^\d{2}:\d{2}$/.test(r.out)?r.out:''};
+      }
+    }
+  }catch(err){clean=null}
+  const keys=clean?Object.keys(clean).sort():[];
+  if(!keys.length){$('hint').textContent='That file isn\u2019t a CTI backup.';return}
+  const ok=await openDialog({
+    title:'Restore backup',sub:`${keys.length} day(s), ${keys[0]} to ${keys[keys.length-1]}. Matching dates are overwritten; other days stay.`,
+    buttons:[{label:'Cancel'},{label:'Restore',primary:true,value:()=>true}]
+  });
+  if(!ok)return;
+  Object.assign(logs,clean);save();render();updateBk();
+  $('hint').textContent=`Restored ${keys.length} day(s).`;
+};
+
+/* startup: ask the browser to keep our data, self-heal from the IndexedDB copy, then prompt */
+(async()=>{
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+  let note='';
+  const raw=await idbGet('logs');
+  if(raw){
+    try{
+      const c=JSON.parse(raw);let n=0;
+      for(const k in c)if(!logs[k]){logs[k]=c[k];n++}
+      if(n){save();note=`Recovered ${n} day(s) from the app\u2019s internal copy.`}
+    }catch(e){}
+  }else if(Object.keys(logs).length)idbSet('logs',JSON.stringify(logs));
+  render();updateBk();
+  if(note)$('hint').textContent=note;
+  setTimeout(autoPrompt,350);
+})();
 
 /* installed apps stay alive in the background: re-check when reopened, and roll over at midnight */
 let lastDay=todayKey();

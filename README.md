@@ -22,5 +22,11 @@ Pick the type on the time-in prompt, or tap any calendar day to edit it.
 Share logs → choose a date range → get an Excel file (Date, Day, Type, Time In, Time Out, Hours).
 On phones it opens the share sheet; on desktop the file downloads and your mail app opens.
 
+## Backup & restore
+- **Backup** saves a `CTI_backup_<date>.json` file to your phone (Downloads on Android; on iPhone choose Save to Files).
+- **Restore** opens your file browser. Pick a backup file and the days in it are merged back in.
+- The app also keeps a second internal copy and restores missing days from it automatically.
+- A browser can't write to a folder silently, so backing up is a tap. The app turns the note amber after 7 days without one.
+
 ## Updating
 After changing any file, bump `VERSION` in `sw.js` (e.g. `cti-v3`) so installed copies refresh.

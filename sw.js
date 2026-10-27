@@ -1,5 +1,5 @@
 // Bump VERSION whenever you change any file, so installed apps pick up the update.
-const VERSION = 'cti-v2';
+const VERSION = 'cti-v3';
 const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 const CORE = [
   './',
