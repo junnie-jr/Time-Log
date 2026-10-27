@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Punch</title>
+<meta name="theme-color" content="#0d1013">
+<meta name="description" content="Minimal time in / time out log.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Punch">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+:root{
+  --bg:#f6f7f8; --fg:#14181c; --mute:#7a838c; --line:#dfe3e7; --card:#ffffff;
+  --accent:#0a7cff; --ok:#13a36b; --warn:#d98a00;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){--bg:#0d1013;--fg:#e8ecef;--mute:#7b858f;--line:#232a31;--card:#141920;--accent:#4da3ff;--ok:#3ddc97;--warn:#f0b429}
+}
+:root[data-theme="dark"]{--bg:#0d1013;--fg:#e8ecef;--mute:#7b858f;--line:#232a31;--card:#141920;--accent:#4da3ff;--ok:#3ddc97;--warn:#f0b429}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+main{max-width:440px;margin:0 auto;padding:28px 20px 48px}
+header{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:13px;color:var(--mute)}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+.ghost{background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-family:var(--mono);font-size:12px;color:var(--mute)}
+.ghost:hover{color:var(--fg);border-color:var(--mute)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.clock{margin:44px 0 6px;font-family:var(--mono);font-size:54px;font-weight:300;letter-spacing:-2px;font-variant-numeric:tabular-nums}
+.date{font-family:var(--mono);font-size:13px;color:var(--mute)}
+.today{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:28px 0 12px}
+.slot{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:14px;text-align:left;min-height:84px}
+.slot small{display:block;font-family:var(--mono);font-size:12px;color:var(--mute);margin-bottom:10px}
+.slot b{font-family:var(--mono);font-size:24px;font-weight:500;font-variant-numeric:tabular-nums}
+.slot.on b{color:var(--ok)}
+.slot.pending b{color:var(--mute)}
+.slot.pending{border-style:dashed}
+.hint{font-family:var(--mono);font-size:12px;color:var(--mute);margin:0 0 30px;min-height:16px}
+
+.cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.cal-head h2{margin:0;font-size:15px;font-weight:500;font-family:var(--mono)}
+.cal-head div{display:flex;gap:6px}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.dow{font-family:var(--mono);font-size:11px;color:var(--mute);text-align:center;padding:4px 0}
+.day{aspect-ratio:1;border:1px solid transparent;background:var(--card);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-family:var(--mono);font-size:13px;padding:0}
+.day.blank{background:none;pointer-events:none}
+.day:hover{border-color:var(--mute)}
+.day.t{border-color:var(--accent)}
+.day i{width:5px;height:5px;border-radius:50%;background:transparent}
+.day.full i{background:var(--ok)}
+.day.part i{background:var(--warn)}
+.legend{display:flex;gap:14px;margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--mute)}
+.legend span::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;background:var(--ok)}
+.legend span+span::before{background:var(--warn)}
+
+.share{width:100%;margin-top:30px;padding:14px;border-radius:10px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-family:var(--mono);font-size:14px}
+:root[data-theme="dark"] .share{color:#04121f}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .share{color:#04121f}}
+
+dialog{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:14px;padding:22px;width:min(360px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog h3{margin:0 0 4px;font-size:16px;font-weight:500}
+dialog p{margin:0 0 16px;font-family:var(--mono);font-size:12px;color:var(--mute)}
+.f{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;font-family:var(--mono);font-size:12px;color:var(--mute)}
+.f input{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--fg);font-family:var(--mono);font-size:18px;color-scheme:light dark}
+.row{display:flex;gap:8px;margin-top:6px}
+.row button{flex:1;padding:11px;border-radius:8px;border:1px solid var(--line);background:none;font-family:var(--mono);font-size:13px}
+.row .pri{background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme="dark"] .row .pri{color:#04121f}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .row .pri{color:#04121f}}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.note{margin:12px 0 0;font-size:11px}
+</style>
+</head>
+<body>
+<main>
+  <header><span>punch</span><button class="ghost" id="theme" aria-label="Toggle theme">light/dark</button></header>
+
+  <div class="clock" id="clock">--:--</div>
+  <div class="date" id="date"></div>
+
+  <div class="today">
+    <button class="slot" id="slotIn"><small>time in</small><b id="vIn">--:--</b></button>
+    <button class="slot" id="slotOut"><small>time out</small><b id="vOut">--:--</b></button>
+  </div>
+  <p class="hint" id="hint"></p>
+
+  <div class="cal-head">
+    <h2 id="month"></h2>
+    <div><button class="ghost" id="prev" aria-label="Previous month">&lt;</button><button class="ghost" id="next" aria-label="Next month">&gt;</button></div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="legend"><span>complete</span><span>missing time out</span></div>
+
+  <button class="share" id="share">Share logs</button>
+</main>
+
+<!-- time prompt / edit dialog -->
+<dialog id="dlg">
+  <h3 id="dTitle"></h3><p id="dSub"></p>
+  <div id="dBody"></div>
+  <div class="row" id="dBtns"></div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const KEY='punch.logs.v1', PREF='punch.prefs.v1';
+const $=id=>document.getElementById(id);
+let logs={}, prefs={};
+try{logs=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){logs={}}
+try{prefs=JSON.parse(localStorage.getItem(PREF)||'{}')}catch(e){prefs={}}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(logs))}catch(e){}};
+const savePrefs=()=>{try{localStorage.setItem(PREF,JSON.stringify(prefs))}catch(e){}};
+
+const pad=n=>String(n).padStart(2,'0');
+const dkey=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const hm=d=>`${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const todayKey=()=>dkey(new Date());
+const fromKey=k=>{const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d)};
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+/* theme */
+$('theme').onclick=()=>{
+  const cur=document.documentElement.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+  document.documentElement.dataset.theme=cur==='dark'?'light':'dark';
+  prefs.theme=document.documentElement.dataset.theme;savePrefs();
+};
+if(prefs.theme)document.documentElement.dataset.theme=prefs.theme;
+
+/* clock */
+function tick(){
+  const n=new Date();
+  $('clock').textContent=hm(n);
+  $('date').textContent=`${DAYS[n.getDay()]}, ${MONTHS[n.getMonth()]} ${n.getDate()}, ${n.getFullYear()}`;
+}
+setInterval(tick,15000);tick();
+
+/* dialog helper */
+function openDialog({title,sub,body,buttons}){
+  return new Promise(res=>{
+    const d=$('dlg');
+    $('dTitle').textContent=title;$('dSub').textContent=sub||'';
+    $('dBody').innerHTML=body||'';
+    const wrap=$('dBtns');wrap.innerHTML='';
+    buttons.forEach(b=>{
+      const el=document.createElement('button');
+      el.textContent=b.label;if(b.primary)el.className='pri';
+      el.onclick=()=>{const v=b.value?b.value():null;d.close();res(v===undefined?null:v)};
+      wrap.appendChild(el);
+    });
+    d.oncancel=()=>res(null);
+    d.showModal();
+    const first=d.querySelector('input');if(first)first.focus();
+  });
+}
+const timeField=(id,label,val)=>`<label class="f">${label}<input type="time" id="${id}" value="${val||''}"></label>`;
+
+/* auto prompts */
+async function autoPrompt(){
+  const k=todayKey(), rec=logs[k]||{};
+  const now=hm(new Date());
+  if(!rec.in){
+    const v=await openDialog({
+      title:'Time in',sub:'Good morning. Confirm your start time.',
+      body:timeField('t','time',now),
+      buttons:[{label:'Not now'},{label:'Log time in',primary:true,value:()=>$('t').value||now}]
+    });
+    if(v){logs[k]={...rec,in:v};save();render();}
+  }else if(!rec.out){
+    const v=await openDialog({
+      title:'Time out',sub:`You timed in at ${rec.in}. Leaving now?`,
+      body:timeField('t','time',now),
+      buttons:[{label:'Not yet'},{label:'Log time out',primary:true,value:()=>$('t').value||now}]
+    });
+    if(v){logs[k]={...rec,out:v};save();render();}
+  }
+}
+
+/* edit any day */
+async function editDay(k){
+  const rec=logs[k]||{}, d=fromKey(k);
+  const r=await openDialog({
+    title:`${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()].slice(0,3)} ${d.getDate()}`,sub:'Edit this day\u2019s log.',
+    body:`<div class="two">${timeField('ti','time in',rec.in)}${timeField('to','time out',rec.out)}</div>`,
+    buttons:[
+      {label:'Clear',value:()=>({clear:true})},
+      {label:'Cancel'},
+      {label:'Save',primary:true,value:()=>({in:$('ti').value,out:$('to').value})}
+    ]
+  });
+  if(!r)return;
+  if(r.clear||(!r.in&&!r.out))delete logs[k];
+  else logs[k]={in:r.in||'',out:r.out||''};
+  save();render();
+}
+$('slotIn').onclick=$('slotOut').onclick=()=>editDay(todayKey());
+
+/* calendar */
+let view=new Date();view.setDate(1);
+$('prev').onclick=()=>{view.setMonth(view.getMonth()-1);renderCal()};
+$('next').onclick=()=>{view.setMonth(view.getMonth()+1);renderCal()};
+
+function renderCal(){
+  $('month').textContent=`${MONTHS[view.getMonth()]} ${view.getFullYear()}`;
+  const g=$('grid');g.innerHTML='';
+  DAYS.forEach(n=>{const e=document.createElement('div');e.className='dow';e.textContent=n[0];g.appendChild(e)});
+  const first=new Date(view.getFullYear(),view.getMonth(),1).getDay();
+  const count=new Date(view.getFullYear(),view.getMonth()+1,0).getDate();
+  for(let i=0;i<first;i++){const e=document.createElement('button');e.className='day blank';g.appendChild(e)}
+  const tk=todayKey();
+  for(let n=1;n<=count;n++){
+    const k=`${view.getFullYear()}-${pad(view.getMonth()+1)}-${pad(n)}`, r=logs[k];
+    const b=document.createElement('button');
+    b.className='day'+(k===tk?' t':'')+(r?(r.in&&r.out?' full':' part'):'');
+    b.innerHTML=`${n}<i></i>`;
+    b.title=r?`${r.in||'--'} → ${r.out||'--'}`:'No log';
+    b.onclick=()=>editDay(k);
+    g.appendChild(b);
+  }
+}
+
+function render(){
+  const r=logs[todayKey()]||{};
+  $('vIn').textContent=r.in||'--:--';$('vOut').textContent=r.out||'--:--';
+  $('slotIn').className='slot '+(r.in?'on':'pending');
+  $('slotOut').className='slot '+(r.out?'on':'pending');
+  $('hint').textContent=r.in&&r.out?`Done for today. ${hours(r.in,r.out)} h logged.`:r.in?'Timed in. Reopen later to time out.':'Not timed in yet.';
+  renderCal();
+}
+function hours(a,b){
+  if(!a||!b)return '';
+  const [h1,m1]=a.split(':').map(Number),[h2,m2]=b.split(':').map(Number);
+  let m=(h2*60+m2)-(h1*60+m1);if(m<0)m+=1440;
+  return (m/60).toFixed(2);
+}
+
+/* share / export */
+function buildXlsx(from,to){
+  const rows=[['Date','Day','Time In','Time Out','Hours']];
+  const a=fromKey(from), z=fromKey(to);
+  for(let d=new Date(a);d<=z;d.setDate(d.getDate()+1)){
+    const k=dkey(d), r=logs[k];
+    if(r)rows.push([k,DAYS[d.getDay()],r.in||'',r.out||'',hours(r.in,r.out)?Number(hours(r.in,r.out)):'']);
+  }
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:12},{wch:6},{wch:9},{wch:9},{wch:7}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Time logs');
+  return {buf:XLSX.write(wb,{type:'array',bookType:'xlsx'}),count:rows.length-1};
+}
+
+$('share').onclick=async()=>{
+  const t=todayKey();
+  const first=new Date();first.setDate(1);
+  const r=await openDialog({
+    title:'Share logs',sub:'Pick a range. You get an Excel file.',
+    body:`<div class="two"><label class="f">from<input type="date" id="df" value="${prefs.from||dkey(first)}"></label><label class="f">to<input type="date" id="dt" value="${prefs.to||t}"></label></div>
+          <label class="f">email to<input type="email" id="em" placeholder="you@company.com" value="${prefs.email||''}" style="font-size:14px"></label>
+          <p class="note">Browsers can\u2019t attach files silently. On phones this opens your share sheet; on desktop the file downloads and your mail app opens so you can attach it.</p>`,
+    buttons:[{label:'Cancel'},{label:'Export',primary:true,value:()=>({from:$('df').value,to:$('dt').value,email:$('em').value.trim()})}]
+  });
+  if(!r||!r.from||!r.to)return;
+  if(r.from>r.to){$('hint').textContent='Start date must come before end date.';return}
+  Object.assign(prefs,r);savePrefs();
+  const {buf,count}=buildXlsx(r.from,r.to);
+  const name=`timelogs_${r.from}_to_${r.to}.xlsx`;
+  const file=new File([buf],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const subject=`Time logs ${r.from} to ${r.to}`;
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],title:subject,text:subject});$('hint').textContent=`Shared ${count} day(s).`;return}catch(e){if(e.name==='AbortError')return}
+  }
+  const url=URL.createObjectURL(file);
+  const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  location.href=`mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent('Attached: '+name+' ('+count+' day(s) logged).')}`;
+  $('hint').textContent=`${name} downloaded. Attach it to the email.`;
+};
+
+render();
+setTimeout(autoPrompt,350);
+
+/* installed apps stay alive in the background: re-check when reopened, and roll over at midnight */
+let lastDay=todayKey();
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible')return;
+  tick();
+  if(todayKey()!==lastDay){lastDay=todayKey();view=new Date();view.setDate(1);render();}
+  if(!$('dlg').open)autoPrompt();
+});
+
+/* offline support */
+if('serviceWorker' in navigator){
+  addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
