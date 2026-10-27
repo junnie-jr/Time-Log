@@ -1,7 +1,7 @@
 {
-  "name": "Punch – Time Log",
-  "short_name": "Punch",
-  "description": "Minimal time in / time out log with Excel export.",
+  "name": "CTI",
+  "short_name": "CTI",
+  "description": "CTI-P: minimal time in / time out log with Excel export.",
   "id": "./",
   "start_url": "./?source=pwa",
   "scope": "./",

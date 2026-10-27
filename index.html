@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Punch</title>
+<title>CTI</title>
 <meta name="theme-color" content="#0d1013">
 <meta name="description" content="Minimal time in / time out log.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Punch">
+<meta name="apple-mobile-web-app-title" content="CTI">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 :root{
@@ -79,11 +79,17 @@ dialog p{margin:0 0 16px;font-family:var(--mono);font-size:12px;color:var(--mute
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .row .pri{color:#04121f}}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .note{margin:12px 0 0;font-size:11px}
+
+.brand{color:#17a271;font-weight:600;font-size:15px;letter-spacing:.5px}
+.f select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px 10px;color:var(--fg);font-family:var(--mono);font-size:15px;color-scheme:light dark}
+.day em{font-style:normal;font-size:9px;line-height:1;color:var(--mute)}
+.day.full em{color:var(--ok)}.day.part em{color:var(--warn)}.day.lv em{color:var(--accent)}
+.legend span+span+span::before{background:var(--accent)}
 </style>
 </head>
 <body>
 <main>
-  <header><span>punch</span><button class="ghost" id="theme" aria-label="Toggle theme">light/dark</button></header>
+  <header><span class="brand">CTI-P</span><button class="ghost" id="theme" aria-label="Toggle theme">light/dark</button></header>
 
   <div class="clock" id="clock">--:--</div>
   <div class="date" id="date"></div>
@@ -99,7 +105,7 @@ dialog p{margin:0 0 16px;font-family:var(--mono);font-size:12px;color:var(--mute
     <div><button class="ghost" id="prev" aria-label="Previous month">&lt;</button><button class="ghost" id="next" aria-label="Next month">&gt;</button></div>
   </div>
   <div class="grid" id="grid"></div>
-  <div class="legend"><span>complete</span><span>missing time out</span></div>
+  <div class="legend"><span>complete</span><span>missing time out</span><span>leave</span></div>
 
   <button class="share" id="share">Share logs</button>
 </main>
@@ -113,6 +119,7 @@ dialog p{margin:0 0 16px;font-family:var(--mono);font-size:12px;color:var(--mute
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
+// Storage keys keep the old 'punch' prefix so existing logs are not lost.
 const KEY='punch.logs.v1', PREF='punch.prefs.v1';
 const $=id=>document.getElementById(id);
 let logs={}, prefs={};
@@ -160,22 +167,28 @@ function openDialog({title,sub,body,buttons}){
     });
     d.oncancel=()=>res(null);
     d.showModal();
+    syncType();
     const first=d.querySelector('input');if(first)first.focus();
   });
 }
 const timeField=(id,label,val)=>`<label class="f">${label}<input type="time" id="${id}" value="${val||''}"></label>`;
+const TYPES={WFH:'Work from home',OB:'Official business',SL:'Sick leave',VL:'Vacation leave'};
+const LEAVE=['SL','VL'];
+const typeField=val=>`<label class="f">type<select id="ty" onchange="syncType()"><option value="">Office</option>${Object.entries(TYPES).map(([k,v])=>`<option value="${k}"${k===val?' selected':''}>${k} \u2013 ${v}</option>`).join('')}</select></label>`;
+function syncType(){const w=$('times'),t=$('ty');if(w&&t)w.style.display=LEAVE.includes(t.value)?'none':'';}
 
 /* auto prompts */
 async function autoPrompt(){
   const k=todayKey(), rec=logs[k]||{};
   const now=hm(new Date());
+  if(LEAVE.includes(rec.type))return;
   if(!rec.in){
     const v=await openDialog({
-      title:'Time in',sub:'Good morning. Confirm your start time.',
-      body:timeField('t','time',now),
-      buttons:[{label:'Not now'},{label:'Log time in',primary:true,value:()=>$('t').value||now}]
+      title:'Time in',sub:'Good morning. Confirm your start time, or pick a leave type.',
+      body:typeField(rec.type)+`<div id="times">${timeField('t','time',now)}</div>`,
+      buttons:[{label:'Not now'},{label:'Log it',primary:true,value:()=>({type:$('ty').value,t:$('t').value||now})}]
     });
-    if(v){logs[k]={...rec,in:v};save();render();}
+    if(v){logs[k]=LEAVE.includes(v.type)?{type:v.type,in:'',out:''}:{...rec,type:v.type,in:v.t};save();render();}
   }else if(!rec.out){
     const v=await openDialog({
       title:'Time out',sub:`You timed in at ${rec.in}. Leaving now?`,
@@ -191,16 +204,16 @@ async function editDay(k){
   const rec=logs[k]||{}, d=fromKey(k);
   const r=await openDialog({
     title:`${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()].slice(0,3)} ${d.getDate()}`,sub:'Edit this day\u2019s log.',
-    body:`<div class="two">${timeField('ti','time in',rec.in)}${timeField('to','time out',rec.out)}</div>`,
+    body:typeField(rec.type)+`<div id="times" class="two">${timeField('ti','time in',rec.in)}${timeField('to','time out',rec.out)}</div>`,
     buttons:[
       {label:'Clear',value:()=>({clear:true})},
       {label:'Cancel'},
-      {label:'Save',primary:true,value:()=>({in:$('ti').value,out:$('to').value})}
+      {label:'Save',primary:true,value:()=>({type:$('ty').value,in:$('ti').value,out:$('to').value})}
     ]
   });
   if(!r)return;
-  if(r.clear||(!r.in&&!r.out))delete logs[k];
-  else logs[k]={in:r.in||'',out:r.out||''};
+  if(r.clear||(!r.type&&!r.in&&!r.out))delete logs[k];
+  else logs[k]=LEAVE.includes(r.type)?{type:r.type,in:'',out:''}:{type:r.type,in:r.in||'',out:r.out||''};
   save();render();
 }
 $('slotIn').onclick=$('slotOut').onclick=()=>editDay(todayKey());
@@ -221,20 +234,22 @@ function renderCal(){
   for(let n=1;n<=count;n++){
     const k=`${view.getFullYear()}-${pad(view.getMonth()+1)}-${pad(n)}`, r=logs[k];
     const b=document.createElement('button');
-    b.className='day'+(k===tk?' t':'')+(r?(r.in&&r.out?' full':' part'):'');
-    b.innerHTML=`${n}<i></i>`;
-    b.title=r?`${r.in||'--'} → ${r.out||'--'}`:'No log';
+    b.className='day'+(k===tk?' t':'')+(r?(LEAVE.includes(r.type)?' lv':(r.in&&r.out?' full':' part')):'');
+    b.innerHTML=`${n}${r&&r.type?`<em>${r.type}</em>`:'<i></i>'}`;
+    b.title=r?(LEAVE.includes(r.type)?TYPES[r.type]:`${r.type||'Office'}: ${r.in||'--'} to ${r.out||'--'}`):'No log';
     b.onclick=()=>editDay(k);
     g.appendChild(b);
   }
 }
 
 function render(){
-  const r=logs[todayKey()]||{};
-  $('vIn').textContent=r.in||'--:--';$('vOut').textContent=r.out||'--:--';
-  $('slotIn').className='slot '+(r.in?'on':'pending');
-  $('slotOut').className='slot '+(r.out?'on':'pending');
-  $('hint').textContent=r.in&&r.out?`Done for today. ${hours(r.in,r.out)} h logged.`:r.in?'Timed in. Reopen later to time out.':'Not timed in yet.';
+  const r=logs[todayKey()]||{}, lv=LEAVE.includes(r.type);
+  $('vIn').textContent=lv?r.type:(r.in||'--:--');
+  $('vOut').textContent=lv?r.type:(r.out||'--:--');
+  $('slotIn').className='slot '+(lv||r.in?'on':'pending');
+  $('slotOut').className='slot '+(lv||r.out?'on':'pending');
+  const tag=r.type&&!lv?TYPES[r.type]+'. ':'';
+  $('hint').textContent=lv?`${TYPES[r.type]} today.`:r.in&&r.out?`${tag}Done for today. ${hours(r.in,r.out)} h logged.`:r.in?`${tag}Timed in. Reopen later to time out.`:'Not timed in yet.';
   renderCal();
 }
 function hours(a,b){
@@ -246,14 +261,14 @@ function hours(a,b){
 
 /* share / export */
 function buildXlsx(from,to){
-  const rows=[['Date','Day','Time In','Time Out','Hours']];
+  const rows=[['Date','Day','Type','Time In','Time Out','Hours']];
   const a=fromKey(from), z=fromKey(to);
   for(let d=new Date(a);d<=z;d.setDate(d.getDate()+1)){
     const k=dkey(d), r=logs[k];
-    if(r)rows.push([k,DAYS[d.getDay()],r.in||'',r.out||'',hours(r.in,r.out)?Number(hours(r.in,r.out)):'']);
+    if(r)rows.push([k,DAYS[d.getDay()],r.type||'Office',r.in||'',r.out||'',hours(r.in,r.out)?Number(hours(r.in,r.out)):'']);
   }
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:6},{wch:9},{wch:9},{wch:7}];
+  ws['!cols']=[{wch:12},{wch:6},{wch:8},{wch:9},{wch:9},{wch:7}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Time logs');
   return {buf:XLSX.write(wb,{type:'array',bookType:'xlsx'}),count:rows.length-1};
 }
@@ -272,7 +287,7 @@ $('share').onclick=async()=>{
   if(r.from>r.to){$('hint').textContent='Start date must come before end date.';return}
   Object.assign(prefs,r);savePrefs();
   const {buf,count}=buildXlsx(r.from,r.to);
-  const name=`timelogs_${r.from}_to_${r.to}.xlsx`;
+  const name=`CTI_timelogs_${r.from}_to_${r.to}.xlsx`;
   const file=new File([buf],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const subject=`Time logs ${r.from} to ${r.to}`;
   if(navigator.canShare&&navigator.canShare({files:[file]})){
